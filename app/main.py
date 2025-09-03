@@ -24,7 +24,7 @@ def main():
             with open(file, "rb") as f1:
                 content = zlib.decompress(f1.read())
                 split_content = content.split(b"\x00", 1)
-                stuff = split_content[1]
+                [header, stuff] = split_content
                 print(stuff.decode("utf-8"), end="")
                 
     else:
