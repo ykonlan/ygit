@@ -25,7 +25,7 @@ def main():
                 content = zlib.decompress(f1.read())
                 split_content = content.split(b"\x00", 1)
                 stuff = split_content[1]
-                print(stuff.decode("utf-8"))
+                print(stuff.decode("utf-8"), sep="")
                 
     else:
         raise RuntimeError(f"Unknown command #{command}")
