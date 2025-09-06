@@ -1,11 +1,28 @@
 #!/usr/bin/env python
 
-import sys,os,zlib, binascii
+import sys,os,zlib, binascii, argparse
 
 
 def main():
-    # helper function for pretty printing objects
-    def cat_file_objects(hashed_item_name, prefix="", r=False):
+    # parser of arguments for this script
+    my_parser = argparse.ArgumentParser(description="Tool for version control")
+    # subparser group of subcommands
+    subparsers = my_parser.add_subparsers(dest="subcommand") 
+    # subparser1 for cat-file command
+    cat_file_parser = subparsers.add_parser("cat-file", description= "Plumbing command for inspecting objects")
+    # subparser2 for init command
+    init_parser = subparsers.add_parser("init", description= "Create new repository")
+    # mutually exclusive group for cat-fiole arguments so only 1 can be chosen at a time
+    cat_file_parser_group = cat_file_parser.add_mutually_exclusive_group()
+    cat_file_parser_group.add_argument("-p", help="pretty print object. recursive to print including nested directories and simple for otherwise", choices = ["simple", "recursive"], const="simple", nargs="?")
+    cat_file_parser_group.add_argument("-s", action="store_true", help="show object size in bytes")
+    cat_file_parser_group.add_argument("-t", action="store_true", help="show object type")
+    # positional arg object required for command to run
+    cat_file_parser.add_argument("object", help="hashed name of object you want to inspect")
+    args = my_parser.parse_args()
+    
+    
+    def type_and_size(hashed_item_name):
         # finding the file path and hence actual file from the hash given
         file = f".git/objects/{hashed_item_name[0:2]}/{hashed_item_name[2:]}"
         try:
@@ -27,6 +44,11 @@ def main():
         except ValueError:
             print(f"Object {hashed_item_name} has invalid format", file=sys.stderr)
             return
+        return obj_type, size, stuff
+
+    
+    # helper function for pretty printing objects
+    def cat_file_objects(obj_type, stuff, print_style, prefix=""):
         # if object is blob or commit, utf-8 decode normally since they are utf-decodable
         if obj_type == b"blob" or obj_type == b"commit":
             print(stuff.decode("utf-8"), end="")
@@ -48,28 +70,34 @@ def main():
                 entry_type = "tree" if mode == "040000" else "blob"
                 print(f"{prefix}{mode} {entry_type} {sha_bytes_utf}\t{filename}")
                 # if user specifies r(recursive) as flag, pretty print nested directories as well
-                if r and mode in ("40000","040000"):
-                    cat_file_objects(sha_bytes_utf, prefix = prefix + " ", r=True)
+                if print_style == "recursive" and mode in ("40000","040000"):
+                    obj_type, size, stuff = type_and_size(sha_bytes_utf)
+                    cat_file_objects(obj_type, stuff, prefix = prefix + " ", print_style="recursive")
                 i = null_i + 21        
 
-    command = sys.argv[1]
+    command = args.subcommand
     if command == "init":
-        # initialize git by creating necessary directories and files
-        os.mkdir(".git")
-        os.mkdir(".git/objects")
-        os.mkdir(".git/refs")
-        # set current branch as main
-        with open(".git/HEAD", "w") as f:
-            f.write("ref: refs/heads/main\n")
-        print("Initialized git directory")
-        # 
+        if not os.path.exists(".git"):
+            # initialize git by creating necessary directories and files
+            os.mkdir(".git")
+            os.mkdir(".git/objects")
+            os.mkdir(".git/refs")
+            # set current branch as main
+            with open(".git/HEAD", "w") as f:
+                f.write("ref: refs/heads/main\n")
+            print("Initialized git directory")
+        else:
+            print("Reinitialized existing ygit repository")
+        # taking care of cat-file command
     elif command == "cat-file":
-        flags = "".join(sys.argv[2:-1])
-        flags =flags.replace("-","")
-        r = "r" in flags
-        if "p" in flags:
-            hashed_item_name = sys.argv[-1]
-            cat_file_objects(hashed_item_name, r=r)
+        obj_type, size, stuff = type_and_size(args.object)
+        if args.p:
+            cat_file_objects(obj_type, stuff, args.p)
+        elif args.s:
+            print(f"{size.decode('utf-8')} bytes")
+        elif args.t:
+            print(obj_type.decode("utf-8"))
+
 
 if __name__ == "__main__":
     main()
