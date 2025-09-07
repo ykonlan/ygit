@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys,os,zlib, binascii, argparse
+import sys,os,zlib, binascii, argparse, stat, hashlib
 
 
 def main():
@@ -12,29 +12,31 @@ def main():
     cat_file_parser = subparsers.add_parser("cat-file", description= "Plumbing command for inspecting objects")
     # subparser2 for init command
     init_parser = subparsers.add_parser("init", description= "Create new repository")
-    # mutually exclusive group for cat-fiole arguments so only 1 can be chosen at a time
+    # subparser3 for hash-object
+    hash_object_parser = subparsers.add_parser("hash-object", description="Compute the SHA-1 hash of a file and optionally store it as a Git object")
+    hash_object_parser.add_argument("-w", action="store_true", help="Write object to database after hashing")
+    hash_object_parser.add_argument("object_name", help="name of object for hashing")
+    # mutually exclusive group for cat-file arguments so only 1 can be chosen at a time
     cat_file_parser_group = cat_file_parser.add_mutually_exclusive_group()
     cat_file_parser_group.add_argument("-p", help="pretty print object. recursive to print including nested directories and simple for otherwise", choices = ["simple", "recursive"], const="simple", nargs="?")
     cat_file_parser_group.add_argument("-s", action="store_true", help="show object size in bytes")
     cat_file_parser_group.add_argument("-t", action="store_true", help="show object type")
-    # positional arg object required for command to run
+    # positional argument object required for command to run
     cat_file_parser.add_argument("object", help="hashed name of object you want to inspect")
     args = my_parser.parse_args()
     
     
-    def type_and_size(hashed_item_name):
-        # finding the file path and hence actual file from the hash given
-        file = f".git/objects/{hashed_item_name[0:2]}/{hashed_item_name[2:]}"
+    def type_and_size(file, hashed_item_name = None):
         try:
             # open and decompress file content with zlib
             with open(file, "rb") as f1:
                 content = zlib.decompress(f1.read())
                 # raise error if file is missing
         except FileNotFoundError:
-            print(f"Error: Object {hashed_item_name} not found", file=sys.stderr)
+            print(f"Error: Object {hashed_item_name or file} not found", file=sys.stderr)
             return
         except zlib.error:
-            print(f"Error : Object {hashed_item_name} could not be decompressed", file=sys.stderr)
+            print(f"Error : Object {hashed_item_name or file} could not be decompressed", file=sys.stderr)
             return
         try:
             # split decompressed object into header and content
@@ -42,7 +44,7 @@ def main():
             # further split header into type and size
             [obj_type, size] = header.split(b" ", 1)
         except ValueError:
-            print(f"Object {hashed_item_name} has invalid format", file=sys.stderr)
+            print(f"Object {hashed_item_name or file} has invalid format", file=sys.stderr)
             return
         return obj_type, size, stuff
 
@@ -90,13 +92,50 @@ def main():
             print("Reinitialized existing ygit repository")
         # taking care of cat-file command
     elif command == "cat-file":
-        obj_type, size, stuff = type_and_size(args.object)
+        # finding the file path and hence actual file from the hash given
+        file = f".git/objects/{args.object[0:2]}/{args.object[2:]}"
+        obj_type, size, stuff = type_and_size(file, args.object)
         if args.p:
             cat_file_objects(obj_type, stuff, args.p)
         elif args.s:
             print(f"{size.decode('utf-8')} bytes")
         elif args.t:
             print(obj_type.decode("utf-8"))
+    elif command == "hash-object":
+        object_name = args.object_name
+        if os.path.exists(object_name):
+            # find the object mode(type) using lstat
+            stats = os.lstat(object_name)
+            mode = stats.st_mode
+            # hash-object is only for blobs!
+            if not stat.S_ISREG(mode):
+                print("invalid file name", file=sys.stderr)
+                return
+            with open(object_name, "rb") as file:
+                content = file.read()
+            size = len(content)
+            blob = (f"blob {size}\0").encode("utf-8") + content
+            compressed_blob = zlib.compress(blob)
+            sha_blob = hashlib.sha1(blob).hexdigest()
+            print(sha_blob)
+            if args.w:
+                file_dir = f".git/objects/{sha_blob[0:2]}"
+                file_path = f"{file_dir}/{sha_blob[2:]}"
+                os.makedirs(file_dir, exist_ok=True)
+                if not os.path.exists(file_path):
+                    with open(file_path, "wb") as blob_byte_file:
+                        blob_byte_file.write(compressed_blob)
+                        print("File saved successfully")
+                else:
+                    print("File already exists in database", file=sys.stderr)
+                    return
+        else:
+            print("File does not exist", file=sys.stderr)
+            return
+
+
+            
+            
 
 
 if __name__ == "__main__":
