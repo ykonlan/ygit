@@ -10,6 +10,26 @@ def root_finder():
             return None
         current = parent
 
+
+def object_writer(sha_hashed_obj, obj):
+    # decipher the directory in which the file is to be stored 
+    obj_dir = f".ygit/objects/{sha_hashed_obj[0:2]}"
+    # decipher the name under which the file will be stored
+    obj_path = f"{obj_dir}/{sha_hashed_obj[2:]}"
+    # make the directory in ygit objects if it does not exist
+    os.makedirs(obj_dir, exist_ok=True)
+    # check if the file has already been stored before
+    if not os.path.exists(obj_path):
+        try:
+            # open and write the file in the now guaranteed-to-be-existing directory 
+            with open(obj_path, "wb") as obj_byte_file:
+                #compress the obj and write to database
+                compressed_item = zlib.compress(obj)
+                obj_byte_file.write(compressed_item)
+        except Exception as e:
+            return False
+    return True
+
 def object_type(file_path):
     # check if the file or path provided exists
     if os.path.exists(file_path):
@@ -37,21 +57,63 @@ def  file_stager(file_to_stage, mode, size):
             print("This is not a repository. Run ygit init to make it one")
             return
         rel_path = os.path.relpath(file_to_stage, repo_root) 
-        hashed_blob, blob_obj = file_hasher(file_to_stage)
+        rel_path = rel_path.replace(os.sep, "/")
+        hashed_blob, blob_obj = file_hasher(rel_path)
         index_file = os.path.join(repo_root, ".ygit/index.json")
+        tmp_index = index_file + ".tmp"
         stage = {"file": rel_path, "file_hash": hashed_blob, "size": size, "mode":mode}
         with open(index_file, "r") as index:
-            existing_index = json.load(index)
+            try:
+                existing_index = json.load(index)
+            except json.JSONDecodeError:
+                existing_index = []
             for entry in existing_index:
                 if entry["file"] == rel_path:
                     entry.update(stage)
                     break
             else:
                 existing_index.append(stage)
-        with open(index_file,"w") as index:
-            json.dump(existing_index, index, indent=2)
+        
+        with open(tmp_index,"w") as tmpindex:
+            try:
+                json.dump(existing_index, tmpindex, indent=2)
+            except Exception as e:
+                print(f"{rel_path} staging failed. {e}")
+                return
+        os.replace(tmp_index, index_file)
         return True
 
+def write_tree(dir_name, index_data):
+    repo_root = root_finder()
+    children = os.listdir(dir_name)
+    content = []
+    for child in children:
+            abs_path = os.path.abspath(child)
+            if os.path.isfile(abs_path):
+                rel_path = os.path.relpath(abs_path, repo_root)
+                for entry in index_data:
+                    if entry["file"] == rel_path:
+                        sha_in_bytes = bytes.fromhex(entry["file_hash"])
+                        entry_bytes = str(entry["mode"]).encode() + b" " + child.encode() + b"\x00" + sha_in_bytes
+                        content.append(entry_bytes)
+                        break
+
+            elif os.path.isdir(abs_path):
+                sub_tree = write_tree(abs_path, index_data)
+                sub_tree_sha = hashlib.sha1(sub_tree).digest()
+                sub_tree_sha_hex = hashlib.sha1(sub_tree).hexdigest()
+
+                object_writer(sub_tree_sha_hex, sub_tree)
+
+                content.append(b"40000 " + child.encode() + b"\x00" + sub_tree_sha)
+
+    full_content = b"".join(content)
+    tree_bytes = b"tree " + str(len(full_content)).encode() + b"\x00" + full_content
+    return tree_bytes
+
+            
+
+            
 
 
 

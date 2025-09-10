@@ -21,7 +21,10 @@ def create_parser():
     
     # subparser4 for add command
     add_subparser = subparsers.add_parser("add")
-    add_subparser.add_argument("object_to_stage", help="Name of object to be staged")
+    add_subparser.add_argument("object_to_stage", help="Name of object to be staged", nargs="+")
+
+    # subparser 5 for write-tree command
+    write_tree_parser = subparsers.add_parser("write-tree", help="Construct tree from staged items, usually for a commit")
     
     # mutually exclusive group for cat-file arguments so only 1 can be chosen at a time
     cat_file_parser_group = cat_file_parser.add_mutually_exclusive_group()
