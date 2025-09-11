@@ -26,6 +26,15 @@ def main():
                 f.write("ref: refs/heads/main\n")
             with open(".ygit/index.json", "w") as f1:
                 f1.write("[]")
+            with open(".ygit/HEAD.json", "w") as f1:
+                f1.write("{}")
+            with open(".ygit/config.json", "w") as f1:
+                f1.write("{}")
+            home_dir = os.path.expanduser("~")
+            global_config_path = os.path.join(home_dir, ".ygitconfig.json")
+            if not os.path.exists(global_config_path):
+                with open(global_config_path, "w") as f1:
+                    f1.write("{}")
             print("Initialized ygit directory")
         else:
             print("Reinitialized existing ygit repository")
@@ -105,7 +114,31 @@ def main():
         with open(index_path, "r") as index:
             index_data = json.load(index)
         tree = write_tree(repo_root, index_data)
-        print(hashlib.sha1(tree).hexdigest())
+        tree_sha = hashlib.sha1(tree).hexdigest()
+        object_writer(tree_sha, tree)
+        print(tree_sha)
+
+
+    if command == "config":
+        repo_root = root_finder()
+        if args.local:
+            config_file = os.path.join(repo_root, ".ygit/config.json")
+        elif args.globall:
+            home_dir = os.path.expanduser("~")
+            config_file = os.path.join(home_dir, ".ygitconfig.json")
+        config_data = {"username": args.username or None, "email": args.email or None}
+        with open(config_file, "r+") as config:
+            exisiting = json.load(config)
+            if config_data["username"]:
+                exisiting["username"] = config_data["username"]
+                print("Username set successfully")
+            if config_data["email"]:
+                exisiting["email"] = config_data["email"]
+                print("Email set successfully")
+            config.seek(0)
+            json.dump(exisiting, config, indent=2)
+            config.truncate()
+            
 
 
 

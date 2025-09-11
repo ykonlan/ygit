@@ -57,16 +57,19 @@ def  file_stager(file_to_stage, mode, size):
             print("This is not a repository. Run ygit init to make it one")
             return
         rel_path = os.path.relpath(file_to_stage, repo_root) 
+        # make sure / is the separator instead of \\
         rel_path = rel_path.replace(os.sep, "/")
         hashed_blob, blob_obj = file_hasher(rel_path)
         index_file = os.path.join(repo_root, ".ygit/index.json")
         tmp_index = index_file + ".tmp"
+        # read existing staged items from index
         stage = {"file": rel_path, "file_hash": hashed_blob, "size": size, "mode":mode}
         with open(index_file, "r") as index:
             try:
                 existing_index = json.load(index)
             except json.JSONDecodeError:
                 existing_index = []
+            # if file is already staged, merely update its content, else, stage it
             for entry in existing_index:
                 if entry["file"] == rel_path:
                     entry.update(stage)
@@ -74,35 +77,49 @@ def  file_stager(file_to_stage, mode, size):
             else:
                 existing_index.append(stage)
         
+        # create a temporary file to prevent any partial writing due to errors in our main index.json
         with open(tmp_index,"w") as tmpindex:
             try:
                 json.dump(existing_index, tmpindex, indent=2)
             except Exception as e:
                 print(f"{rel_path} staging failed. {e}")
                 return
+        # save temp file as main index if writing is successful
         os.replace(tmp_index, index_file)
         return True
 
 def write_tree(dir_name, index_data):
     repo_root = root_finder()
+    # list all content of directory
     children = os.listdir(dir_name)
+    # initialize empty array to store all immediate directory content in tree
     content = []
     for child in children:
+            # absolute path of item
             abs_path = os.path.abspath(child)
+            # if it's a file
             if os.path.isfile(abs_path):
+                # compute relative path
                 rel_path = os.path.relpath(abs_path, repo_root)
+                # check if file is staged
                 for entry in index_data:
+                    # if staged
                     if entry["file"] == rel_path:
+                        # get the bytes of the hash
                         sha_in_bytes = bytes.fromhex(entry["file_hash"])
+                        # construct the file entry and add it to content([]) of the tree
                         entry_bytes = str(entry["mode"]).encode() + b" " + child.encode() + b"\x00" + sha_in_bytes
                         content.append(entry_bytes)
                         break
 
+            # if it's a directory or tree
             elif os.path.isdir(abs_path):
+                # get subtree, 20byte raw hash and then hash as a hex string
                 sub_tree = write_tree(abs_path, index_data)
                 sub_tree_sha = hashlib.sha1(sub_tree).digest()
                 sub_tree_sha_hex = hashlib.sha1(sub_tree).hexdigest()
 
+                # write the tree to the database
                 object_writer(sub_tree_sha_hex, sub_tree)
 
                 content.append(b"40000 " + child.encode() + b"\x00" + sub_tree_sha)

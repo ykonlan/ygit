@@ -25,6 +25,15 @@ def create_parser():
 
     # subparser 5 for write-tree command
     write_tree_parser = subparsers.add_parser("write-tree", help="Construct tree from staged items, usually for a commit")
+
+    # subparser for config command
+    config_parser = subparsers.add_parser("config", help="Set username and email for making commits")
+    config_parser_group = config_parser.add_mutually_exclusive_group(required=True)
+    config_parser_group.add_argument("--local", action="store_true", help="Set credentials for this repo only")
+    config_parser_group.add_argument("--globall",action="store_true", help="Set credentials across all repos")
+    config_parser.add_argument("--username", help="Set the name you would like to be identified by during commits")
+    config_parser.add_argument("--email", help="Set the email you would like to be identified by during commits")
+
     
     # mutually exclusive group for cat-file arguments so only 1 can be chosen at a time
     cat_file_parser_group = cat_file_parser.add_mutually_exclusive_group()
